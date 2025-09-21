@@ -1,5 +1,6 @@
 package io.github.aviraxp.keystoreinjection;
 
+import android.annotation.SuppressLint;
 import android.util.Log;
 
 import org.bouncycastle.asn1.x500.X500Name;
@@ -22,7 +23,7 @@ public final class EntryPoint {
     static {
         try {
             KeyStore keyStore = KeyStore.getInstance("AndroidKeyStore");
-            Field keyStoreSpi = keyStore.getClass().getDeclaredField("keyStoreSpi");
+            @SuppressLint("DiscouragedPrivateApi") Field keyStoreSpi = keyStore.getClass().getDeclaredField("keyStoreSpi");
 
             keyStoreSpi.setAccessible(true);
 

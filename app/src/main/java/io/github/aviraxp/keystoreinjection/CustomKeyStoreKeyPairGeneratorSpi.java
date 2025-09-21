@@ -1,6 +1,10 @@
 package io.github.aviraxp.keystoreinjection;
 
 import android.annotation.SuppressLint;
+import android.content.Context;
+import android.content.pm.PackageInfo;
+import android.content.pm.PackageManager;
+import android.content.pm.Signature;
 import android.os.Build;
 import android.security.keystore.KeyGenParameterSpec;
 import android.security.keystore.KeyProperties;
@@ -34,11 +38,15 @@ import java.nio.charset.StandardCharsets;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.KeyPairGeneratorSpi;
+import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.security.Security;
 import java.security.spec.AlgorithmParameterSpec;
 import java.security.spec.ECGenParameterSpec;
 import java.security.spec.RSAKeyGenParameterSpec;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.Objects;
 
 public class CustomKeyStoreKeyPairGeneratorSpi extends KeyPairGeneratorSpi {
@@ -165,25 +173,25 @@ public class CustomKeyStoreKeyPairGeneratorSpi extends KeyPairGeneratorSpi {
             var AnoAuthRequired = DERNull.INSTANCE;
 
             // TODO hex3l: add device properties to attestation
-            ASN1Encodable[] deviceProperties;
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                if (params.isDevicePropertiesAttestationIncluded()) {
-                    var platformReportedBrand = new DEROctetString(getSystemProperty(Build.BRAND).getBytes());
-                    var platformReportedDevice = new DEROctetString(getSystemProperty(Build.DEVICE).getBytes());
-                    var platformReportedProduct = new DEROctetString(getSystemProperty(Build.PRODUCT).getBytes());
-                    var platformReportedManufacturer = new DEROctetString(getSystemProperty(Build.MANUFACTURER).getBytes());
-                    var platformReportedModel = new DEROctetString(getSystemProperty(Build.MODEL).getBytes());
-                    deviceProperties = new ASN1Encodable[]{platformReportedBrand, platformReportedDevice,
-                            platformReportedProduct, platformReportedManufacturer, platformReportedModel};
-                }
-            }
+//            ASN1Encodable[] deviceProperties;
+//            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+//                if (params.isDevicePropertiesAttestationIncluded()) {
+//                    var platformReportedBrand = new DEROctetString(getSystemProperty(Build.BRAND).getBytes());
+//                    var platformReportedDevice = new DEROctetString(getSystemProperty(Build.DEVICE).getBytes());
+//                    var platformReportedProduct = new DEROctetString(getSystemProperty(Build.PRODUCT).getBytes());
+//                    var platformReportedManufacturer = new DEROctetString(getSystemProperty(Build.MANUFACTURER).getBytes());
+//                    var platformReportedModel = new DEROctetString(getSystemProperty(Build.MODEL).getBytes());
+//                    deviceProperties = new ASN1Encodable[]{platformReportedBrand, platformReportedDevice,
+//                            platformReportedProduct, platformReportedManufacturer, platformReportedModel};
+//                }
+//            }
 
             // To be loaded
             var AosVersion = new ASN1Integer(130000);
             var AosPatchLevel = new ASN1Integer(202401);
 
             // TODO hex3l: add applicationID to attestation
-            // var AapplicationID = createApplicationId();
+            var AapplicationID = createApplicationId();
             var AbootPatchlevel = new ASN1Integer(20231101);
             var AvendorPatchLevel = new ASN1Integer(20231101);
 
@@ -202,12 +210,12 @@ public class CustomKeyStoreKeyPairGeneratorSpi extends KeyPairGeneratorSpi {
             var osVersion = new DERTaggedObject(true, 705, AosVersion);
             var osPatchLevel = new DERTaggedObject(true, 706, AosPatchLevel);
             // TODO hex3l: add applicationID to attestation
-            // var applicationID = new DERTaggedObject(true, 709, AapplicationID);
+            var applicationID = new DERTaggedObject(true, 709, AapplicationID);
             var vendorPatchLevel = new DERTaggedObject(true, 718, AvendorPatchLevel);
             var bootPatchLevel = new DERTaggedObject(true, 719, AbootPatchlevel);
 
             ASN1Encodable[] teeEnforcedEncodables = {purpose, algorithm, keySize, digest, ecCurve,
-                    noAuthRequired, creationDateTime, origin, rootOfTrust, osVersion, osPatchLevel, vendorPatchLevel, bootPatchLevel};
+                    noAuthRequired, creationDateTime, origin, rootOfTrust, osVersion, osPatchLevel, applicationID, vendorPatchLevel, bootPatchLevel};
 
             ASN1OctetString keyDescriptionOctetStr = getAsn1OctetString(teeEnforcedEncodables);
 
@@ -331,20 +339,51 @@ public class CustomKeyStoreKeyPairGeneratorSpi extends KeyPairGeneratorSpi {
         return kpg.generateKeyPair();
     }
 
-    ASN1Sequence createApplicationId(String packageName, int version, byte[] signatureDigests) {
-        ASN1Encodable[] packageInfoAsn1Array = new ASN1Encodable[2];
-        packageInfoAsn1Array[ATTESTATION_PACKAGE_INFO_PACKAGE_NAME_INDEX] =
-                new DEROctetString(packageName.getBytes(StandardCharsets.UTF_8));
-        packageInfoAsn1Array[ATTESTATION_PACKAGE_INFO_VERSION_INDEX] = new ASN1Integer(version);
+    @SuppressLint({"PrivateApi", "PackageManagerGetSignatures"})
+    private DEROctetString createApplicationId() {
+        try {
+            Context context = (Context) Class.forName("android.app.AppGlobals").getMethod("getInitialApplication").invoke(null);
+            if (context == null) return null;
+            PackageManager pm = context.getPackageManager();
+            String packageName = context.getPackageName();
+            PackageInfo packageInfo;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                packageInfo = pm.getPackageInfo(packageName, PackageManager.GET_SIGNING_CERTIFICATES);
+            } else {
+                packageInfo = pm.getPackageInfo(packageName, PackageManager.GET_SIGNATURES);
+            }
+            ASN1Encodable[] packageInfoAsn1Array = new ASN1Encodable[2];
+            packageInfoAsn1Array[ATTESTATION_PACKAGE_INFO_PACKAGE_NAME_INDEX] = new DEROctetString(packageName.getBytes(StandardCharsets.UTF_8));
+            long versionCode = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P ? packageInfo.getLongVersionCode() : packageInfo.versionCode;
+            packageInfoAsn1Array[ATTESTATION_PACKAGE_INFO_VERSION_INDEX] = new ASN1Integer(versionCode);
+            DERSet packageInfosSet = new DERSet(new DERSequence(packageInfoAsn1Array));
+            List<Signature> signatures = new ArrayList<>();
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && packageInfo.signingInfo != null) {
+                if (packageInfo.signingInfo.hasMultipleSigners()) {
+                    Collections.addAll(signatures, packageInfo.signingInfo.getApkContentsSigners());
+                } else {
+                    Collections.addAll(signatures, packageInfo.signingInfo.getSigningCertificateHistory());
+                }
+            } else if (packageInfo.signatures != null) {
+                Collections.addAll(signatures, packageInfo.signatures);
+            }
+            if (signatures.isEmpty()) return null;
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            ASN1Encodable[] signatureDigests = new ASN1Encodable[signatures.size()];
+            for (int i = 0; i < signatures.size(); i++) {
+                byte[] digest = md.digest(signatures.get(i).toByteArray());
+                signatureDigests[i] = new DEROctetString(digest);
+            }
+            DERSet signatureDigestsSet = new DERSet(signatureDigests);
+            ASN1Encodable[] applicationIdAsn1Array = new ASN1Encodable[2];
+            applicationIdAsn1Array[ATTESTATION_APPLICATION_ID_PACKAGE_INFOS_INDEX] = packageInfosSet;
+            applicationIdAsn1Array[ATTESTATION_APPLICATION_ID_SIGNATURE_DIGESTS_INDEX] = signatureDigestsSet;
 
-        ASN1Encodable[] applicationIdAsn1Array = new ASN1Encodable[2];
-        applicationIdAsn1Array[ATTESTATION_APPLICATION_ID_PACKAGE_INFOS_INDEX] =
-                new DERSet(packageInfoAsn1Array);
-
-        applicationIdAsn1Array[ATTESTATION_APPLICATION_ID_SIGNATURE_DIGESTS_INDEX] =
-                new DERSet(new DEROctetString(signatureDigests));
-
-        return new DERSequence(applicationIdAsn1Array);
+            return new DEROctetString(new DERSequence(applicationIdAsn1Array));
+        } catch (Throwable t) {
+            Log.e("KeystoreInjection", "Failed to create Application ID.", t);
+            return null;
+        }
     }
 
     @SuppressLint("PrivateApi")
