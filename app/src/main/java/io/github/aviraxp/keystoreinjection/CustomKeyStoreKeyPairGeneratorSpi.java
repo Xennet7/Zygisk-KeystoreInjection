@@ -152,16 +152,14 @@ public class CustomKeyStoreKeyPairGeneratorSpi extends KeyPairGeneratorSpi {
 
     private Extension createExtension(int size) {
         try {
-            SecureRandom random = new SecureRandom();
+            final String verifiedBootKeyHex = "5d23602d9e6742c8f2266024d1c6e4c2a8d0bff8c9b604625aae861b0b74951f";
+            final String verifiedBootHashHex = "cb9603b9dbb5103cf9247f5716546e0e93baee0f5182b12ed84aec8d675af316";
 
-            byte[] bytes1 = new byte[32];
-            byte[] bytes2 = new byte[32];
+            byte[] verifiedBootKey = hexStringToByteArray(verifiedBootKeyHex);
+            byte[] verifiedBootHash = hexStringToByteArray(verifiedBootHashHex);
 
-            random.nextBytes(bytes1);
-            random.nextBytes(bytes2);
-
-            ASN1Encodable[] rootOfTrustEncodables = {new DEROctetString(bytes1), ASN1Boolean.TRUE,
-                    new ASN1Enumerated(0), new DEROctetString(bytes2)};
+            ASN1Encodable[] rootOfTrustEncodables = {new DEROctetString(verifiedBootKey), ASN1Boolean.TRUE,
+                    new ASN1Enumerated(0), new DEROctetString(verifiedBootHash)};
 
             ASN1Sequence rootOfTrustSeq = new DERSequence(rootOfTrustEncodables);
 
@@ -188,12 +186,12 @@ public class CustomKeyStoreKeyPairGeneratorSpi extends KeyPairGeneratorSpi {
 
             // To be loaded
             var AosVersion = new ASN1Integer(130000);
-            var AosPatchLevel = new ASN1Integer(202401);
+            var AosPatchLevel = new ASN1Integer(202509);
 
             // TODO hex3l: add applicationID to attestation
             var AapplicationID = createApplicationId();
-            var AbootPatchlevel = new ASN1Integer(20231101);
-            var AvendorPatchLevel = new ASN1Integer(20231101);
+            var AbootPatchlevel = new ASN1Integer(20250905);
+            var AvendorPatchLevel = new ASN1Integer(20250905);
 
             var AcreationDateTime = new ASN1Integer(System.currentTimeMillis());
             var Aorigin = new ASN1Integer(0);
@@ -227,10 +225,19 @@ public class CustomKeyStoreKeyPairGeneratorSpi extends KeyPairGeneratorSpi {
         return null;
     }
 
+    private static byte[] hexStringToByteArray(String s) {
+        int len = s.length();
+        byte[] data = new byte[len / 2];
+        for (int i = 0; i < len; i += 2) {
+            data[i / 2] = (byte) ((Character.digit(s.charAt(i), 16) << 4) + Character.digit(s.charAt(i + 1), 16));
+        }
+        return data;
+    }
+
     private ASN1OctetString getAsn1OctetString(ASN1Encodable[] teeEnforcedEncodables) throws IOException {
-        ASN1Integer attestationVersion = new ASN1Integer(4);
+        ASN1Integer attestationVersion = new ASN1Integer(3);
         ASN1Enumerated attestationSecurityLevel = new ASN1Enumerated(1);
-        ASN1Integer keymasterVersion = new ASN1Integer(41);
+        ASN1Integer keymasterVersion = new ASN1Integer(4);
         ASN1Enumerated keymasterSecurityLevel = new ASN1Enumerated(1);
         ASN1OctetString attestationChallenge = new DEROctetString(params.getAttestationChallenge());
         ASN1OctetString uniqueId = new DEROctetString("".getBytes());
