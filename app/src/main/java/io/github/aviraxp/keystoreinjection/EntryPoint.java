@@ -1,16 +1,11 @@
 package io.github.aviraxp.keystoreinjection;
 
-import android.annotation.SuppressLint;
 import android.util.Log;
-
 import org.bouncycastle.asn1.x500.X500Name;
 
-import java.lang.reflect.Field;
-import java.security.KeyStore;
-import java.security.KeyStoreSpi;
-import java.security.Provider;
-import java.security.Security;
+import java.security.KeyPair;
 import java.security.cert.Certificate;
+import java.security.cert.X509Certificate;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.Map;
@@ -22,65 +17,76 @@ public final class EntryPoint {
 
     static {
         try {
-            KeyStore keyStore = KeyStore.getInstance("AndroidKeyStore");
-            @SuppressLint("DiscouragedPrivateApi") Field keyStoreSpi = keyStore.getClass().getDeclaredField("keyStoreSpi");
-
+            java.security.KeyStore keyStore = java.security.KeyStore.getInstance("AndroidKeyStore");
+            java.lang.reflect.Field keyStoreSpi = keyStore.getClass().getDeclaredField("keyStoreSpi");
             keyStoreSpi.setAccessible(true);
+            CustomKeyStoreSpi.keyStoreSpi = (java.security.KeyStoreSpi) keyStoreSpi.get(keyStore);
 
-            CustomKeyStoreSpi.keyStoreSpi = (KeyStoreSpi) keyStoreSpi.get(keyStore);
-
+            java.security.Provider provider = java.security.Security.getProvider("AndroidKeyStore");
+            java.security.Security.removeProvider("AndroidKeyStore");
+            java.security.Security.insertProviderAt(new CustomProvider(provider), 1);
         } catch (Throwable t) {
             Log.e("KeystoreInjection", Log.getStackTraceString(t));
         }
-
-        Provider provider = Security.getProvider("AndroidKeyStore");
-
-        Provider customProvider = new CustomProvider(provider);
-
-        Security.removeProvider("AndroidKeyStore");
-        Security.insertProviderAt(customProvider, 1);
     }
 
     public static void receiveXml(String data) {
         XMLParser xmlParser = new XMLParser(data);
-
         try {
-            int numberOfKeyboxes = Integer.parseInt(Objects.requireNonNull(xmlParser.obtainPath(
-                    "AndroidAttestation.NumberOfKeyboxes").get("text")));
+            int numberOfKeyboxes = Integer.parseInt(Objects.requireNonNull(
+                    xmlParser.obtainPath("AndroidAttestation.NumberOfKeyboxes").get("text")));
             for (int i = 0; i < numberOfKeyboxes; i++) {
                 String keyboxAlgorithm = xmlParser.obtainPath(
                         "AndroidAttestation.Keybox.Key[" + i + "]").get("algorithm");
                 String privateKey = xmlParser.obtainPath(
                         "AndroidAttestation.Keybox.Key[" + i + "].PrivateKey").get("text");
-                int numberOfCertificates = Integer.parseInt(Objects.requireNonNull(xmlParser.obtainPath(
-                        "AndroidAttestation.Keybox.Key[" + i + "].CertificateChain.NumberOfCertificates").get("text")));
+                int numberOfCertificates = Integer.parseInt(Objects.requireNonNull(
+                        xmlParser.obtainPath(
+                                "AndroidAttestation.Keybox.Key[" + i + "].CertificateChain.NumberOfCertificates").get("text")));
 
                 LinkedList<Certificate> certificateChain = new LinkedList<>();
                 LinkedList<X500Name> certificateChainHolders = new LinkedList<>();
-
                 for (int j = 0; j < numberOfCertificates; j++) {
                     Map<String, String> certData = xmlParser.obtainPath(
                             "AndroidAttestation.Keybox.Key[" + i + "].CertificateChain.Certificate[" + j + "]");
                     certificateChain.add(CertUtils.parseCert(certData.get("text")));
                     certificateChainHolders.add(CertUtils.parseCertSubject(certData.get("text")));
                 }
-                certs.put(keyboxAlgorithm, new Keybox(CertUtils.parseKeyPair(privateKey),
-                        CertUtils.parsePrivateKey(privateKey), certificateChain, certificateChainHolders));
+
+                KeyPair kp = CertUtils.parseKeyPair(privateKey);
+                store.put(keyboxAlgorithm, certificateChain.isEmpty() ? CertUtils.buildDummyCert(kp, "CN=FakeTEE") : certificateChain.get(0));
+                certs.put(keyboxAlgorithm, new Keybox(kp,
+                        CertUtils.parsePrivateKey(privateKey),
+                        certificateChain,
+                        certificateChainHolders));
             }
         } catch (Throwable t) {
             Log.e("KeystoreInjection", Log.getStackTraceString(t));
         }
     }
 
-    static void append(String a, Certificate c) {
-        store.put(a, c);
+    public static void append(String alias, Certificate cert) {
+        store.put(alias, cert);
     }
 
-    static Certificate retrieve(String a) {
-        return store.get(a);
+    public static Certificate retrieve(String alias) {
+        Certificate cert = store.get(alias);
+        if (cert != null) return cert;
+
+        // Fallback: use first keybox to generate dummy cert
+        for (Keybox k : certs.values()) {
+            try {
+                X509Certificate dummy = CertUtils.buildDummyCert(k.keypair(), "CN=FakeTEE");
+                store.put(alias, dummy);
+                return dummy;
+            } catch (Throwable t) {
+                Log.e("KeystoreInjection", Log.getStackTraceString(t));
+            }
+        }
+        return null;
     }
 
-    static Keybox box(String type) {
+    public static Keybox box(String type) {
         return certs.get(type);
     }
 }
