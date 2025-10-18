@@ -28,39 +28,44 @@ public final class CustomKeyStoreSpi extends KeyStoreSpi {
 
     @Override
     public Certificate[] engineGetCertificateChain(String alias) {
-        Log.d("KeystoreInjection", "GetChain Certificate alias requested: " + alias);
-        Certificate leaf = EntryPoint.retrieve(alias);
-        if (leaf != null) {
-            Log.d("KeystoreInjection", "GetChain alias certificates: " + leaf.getType() + " " + leaf.hashCode() + " ");
-            LinkedList<Certificate> certificateList = new LinkedList<>();
+        Log.d("KeystoreInjection", "GetChain alias requested: " + alias);
 
+        Certificate leaf = EntryPoint.retrieve(alias);
+        LinkedList<Certificate> certificateList = new LinkedList<>();
+
+        if (leaf != null) {
+            // Use stored leaf
+            certificateList.add(leaf);
             try {
                 if (((X509Certificate) leaf).getSigAlgName().contains("ECDSA")) {
-                    certificateList.addAll((Objects.requireNonNull(EntryPoint.box("ecdsa"))).certificateChain());
+                    certificateList.addAll(Objects.requireNonNull(EntryPoint.box("ecdsa")).certificateChain());
                 } else {
-                    certificateList.addAll((Objects.requireNonNull(EntryPoint.box("rsa"))).certificateChain());
+                    certificateList.addAll(Objects.requireNonNull(EntryPoint.box("rsa")).certificateChain());
                 }
             } catch (Throwable t) {
                 Log.e("KeystoreInjection", Log.getStackTraceString(t));
             }
-            certificateList.addFirst(leaf);
-
-            return certificateList.toArray(new Certificate[0]);
+        } else {
+            // TEE broken → generate dummy cert from first available keybox
+            for (String type : new String[]{"ecdsa", "rsa"}) {
+                Keybox k = EntryPoint.box(type);
+                if (k != null) {
+                    try {
+                        Certificate dummy = CertUtils.buildDummyCert(k.keypair(), "CN=FakeTEE");
+                        certificateList.add(dummy);
+                        certificateList.addAll(k.certificateChain());
+                        break;
+                    } catch (Throwable t) {
+                        Log.e("KeystoreInjection", Log.getStackTraceString(t));
+                    }
+                }
+            }
         }
 
-        return keyStoreSpi.engineGetCertificateChain(alias);
+        return certificateList.isEmpty() ? new Certificate[0] : certificateList.toArray(new Certificate[0]);
     }
-
-    @Override
-    public Certificate engineGetCertificate(String alias) {
-        return keyStoreSpi.engineGetCertificate(alias);
-    }
-
-    @Override
-    public Date engineGetCreationDate(String alias) {
-        return keyStoreSpi.engineGetCreationDate(alias);
-    }
-
+	
+	
     @Override
     public void engineSetKeyEntry(String alias, Key key, char[] password, Certificate[] chain) throws KeyStoreException {
         keyStoreSpi.engineSetKeyEntry(alias, key, password, chain);
