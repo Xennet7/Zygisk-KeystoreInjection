@@ -19,6 +19,8 @@ import java.security.PrivateKey;
 import java.security.cert.Certificate;
 import java.security.cert.X509Certificate;
 import java.util.regex.Pattern;
+import org.bouncycastle.asn1.DEROctetString;
+
 
 public class CertUtils {
     private static final Pattern lineTrimmer = Pattern.compile("^\\s+|\\s+$", Pattern.MULTILINE);
