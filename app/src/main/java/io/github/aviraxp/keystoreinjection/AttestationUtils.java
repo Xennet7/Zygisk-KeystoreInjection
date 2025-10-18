@@ -77,7 +77,8 @@ public final class AttestationUtils {
         };
 
         ASN1OctetString keyDescriptionOctetStr = getAsn1OctetString(teeEnforced, attestationChallenge);
-        return keyDescriptionOctetStr;
+        return DEROctetString.getInstance(keyDescriptionOctetStr);
+
     }
 
     private static DEROctetString getAsn1OctetString(ASN1Encodable[] teeEnforced, byte[] challenge) throws IOException {
