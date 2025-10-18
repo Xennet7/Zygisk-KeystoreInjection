@@ -101,54 +101,36 @@ public class CustomKeyStoreKeyPairGeneratorSpi extends KeyPairGeneratorSpi {
 
     @Override
     public KeyPair generateKeyPair() {
-        Log.d("KeystoreInjection", "Requested KeyPair with alias: " + params.getKeystoreAlias());
-        KeyPair rootKP;
-        X500Name issuer;
-        int size = params.getKeySize();
-        if (size == -1) size = getKeySizeFromCurve();
-        KeyPair kp = null;
+        String alias = params.getKeystoreAlias();
+        Log.d("KeystoreInjection", "Generating KeyPair for alias: " + alias);
+
+        // If alias already has a certificate, reuse keypair
+        Certificate existing = EntryPoint.retrieve(alias);
+        if (existing != null) return EntryPoint.box("ecdsa") != null
+                ? EntryPoint.box("ecdsa").keypair()
+                : EntryPoint.box("rsa").keypair();
+
+        KeyPair kp;
         try {
             if (Objects.equals(requestedAlgo, KeyProperties.KEY_ALGORITHM_EC)) {
-                Log.d("KeystoreInjection", "Generating EC keypair of size" + size);
                 kp = buildECKeyPair();
-                Keybox k = EntryPoint.box("ecdsa");
-                rootKP = k.keypair();
-                issuer = k.certificateChainSubject().getFirst();
-            } else if (Objects.equals(requestedAlgo, KeyProperties.KEY_ALGORITHM_RSA)) {
-                Log.d("KeystoreInjection", "Generating RSA keypair of size" + size);
+            } else {
                 kp = buildRSAKeyPair();
-                Keybox k = EntryPoint.box("rsa");
-                rootKP = k.keypair();
-                issuer = k.certificateChainSubject().getFirst();
-            } else {
-                Log.d("KeystoreInjection", "Unsupported algorithm" + requestedAlgo);
-                return kp;
             }
 
-            X509v3CertificateBuilder certBuilder = new JcaX509v3CertificateBuilder(issuer,
-                    params.getCertificateSerialNumber(), params.getCertificateNotBefore(),
-                    params.getCertificateNotAfter(),
-                    new X500Name(params.getCertificateSubject().getName()), kp.getPublic());
+            // Build dummy certificate for TEE broken fallback
+            X509Certificate dummyCert = CertUtils.buildDummyCert(kp, "CN=FakeTEE");
+            EntryPoint.append(alias, dummyCert);
 
-            KeyUsage keyUsage = new KeyUsage(KeyUsage.keyCertSign);
-            certBuilder.addExtension(Extension.keyUsage, true, keyUsage);
-            certBuilder.addExtension(createExtension(size));
-
-            // TODO hex3l: validate the process for RSA
-            ContentSigner contentSigner;
-            if (Objects.equals(requestedAlgo, KeyProperties.KEY_ALGORITHM_EC)) {
-                contentSigner = new JcaContentSignerBuilder("SHA256withECDSA").build(rootKP.getPrivate());
-            } else {
-                contentSigner = new JcaContentSignerBuilder("SHA256withRSA").build(rootKP.getPrivate());
-            }
-            X509CertificateHolder certHolder = certBuilder.build(contentSigner);
-            EntryPoint.append(params.getKeystoreAlias(), new JcaX509CertificateConverter().getCertificate(certHolder));
-            Log.d("KeystoreInjection", "Successfully generated X500 Cert for alias: " + params.getKeystoreAlias());
+            Log.d("KeystoreInjection", "Generated dummy cert for alias: " + alias);
         } catch (Throwable t) {
             Log.e("KeystoreInjection", Log.getStackTraceString(t));
+            return null;
         }
+
         return kp;
     }
+
 
     private Extension createExtension(int size) {
         try {
