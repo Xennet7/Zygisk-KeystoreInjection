@@ -64,7 +64,16 @@ public final class CustomKeyStoreSpi extends KeyStoreSpi {
 
         return certificateList.isEmpty() ? new Certificate[0] : certificateList.toArray(new Certificate[0]);
     }
-	
+
+	@Override
+    public java.util.Date engineGetCreationDate(String alias) {
+        try {
+            return keyStoreSpi.engineGetCreationDate(alias);
+        } catch (Throwable t) {
+            return new java.util.Date(); // fallback to avoid nulls / crashes
+        }
+    }
+
 	
     @Override
     public void engineSetKeyEntry(String alias, Key key, char[] password, Certificate[] chain) throws KeyStoreException {
