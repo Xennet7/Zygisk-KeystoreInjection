@@ -152,8 +152,8 @@ public class CustomKeyStoreKeyPairGeneratorSpi extends KeyPairGeneratorSpi {
 
     private Extension createExtension(int size) {
         try {
-            final String verifiedBootKeyHex = "5d23602d9e6742c8f2266024d1c6e4c2a8d0bff8c9b604625aae861b0b74951f";
-            final String verifiedBootHashHex = "cb9603b9dbb5103cf9247f5716546e0e93baee0f5182b12ed84aec8d675af316";
+            final String verifiedBootKeyHex = "7c5ea4ca34a07b2d36b7c12b0dfaOa36738a528cf0253bcdb6b73d49aec77c91";
+            final String verifiedBootHashHex = "0fc17b253f997e300c2d83f5ef08dd5a71e8619df25c4ad4f5ebb0babd548d28";
 
             byte[] verifiedBootKey = hexStringToByteArray(verifiedBootKeyHex);
             byte[] verifiedBootHash = hexStringToByteArray(verifiedBootHashHex);
