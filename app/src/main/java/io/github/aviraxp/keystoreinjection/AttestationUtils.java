@@ -2,6 +2,8 @@ package io.github.aviraxp.keystoreinjection;
 
 import org.bouncycastle.asn1.*;
 import org.bouncycastle.asn1.x509.Extension;
+import org.bouncycastle.asn1.DEROctetString;
+
 
 import java.io.IOException;
 import java.util.Date;
@@ -77,8 +79,7 @@ public final class AttestationUtils {
         };
 
         ASN1OctetString keyDescriptionOctetStr = getAsn1OctetString(teeEnforced, attestationChallenge);
-        return DEROctetString.getInstance(keyDescriptionOctetStr);
-
+        return new DEROctetString(keyDescriptionOctetStr.getOctets());
     }
 
     private static DEROctetString getAsn1OctetString(ASN1Encodable[] teeEnforced, byte[] challenge) throws IOException {
