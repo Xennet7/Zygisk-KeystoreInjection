@@ -134,4 +134,9 @@ public final class CustomKeyStoreSpi extends KeyStoreSpi {
     public void engineLoad(InputStream stream, char[] password) throws CertificateException, IOException, NoSuchAlgorithmException {
         keyStoreSpi.engineLoad(stream, password);
     }
+	@Override
+    public java.security.cert.Certificate engineGetCertificate(String alias) {
+        return null; // You can later implement retrieval if needed
+    }
+
 }
